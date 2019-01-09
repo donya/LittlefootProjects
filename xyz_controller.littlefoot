@@ -1,0 +1,278 @@
+/*
+XYZ pad for ROLI Lightpad M Block
+Donya Quick
+Based on some online examples of XY pad-style scripting of the Lightpad.
+
+Y-Axis: pitch bend with 2 snap-back behavior options. 
+X-Axis: customizable CC from middle to right. Default CC is 1.
+Z-Axis: customizable CC responding to pressure. Default CC is 115.
+
+Button 1 (red): pitch bend behavior. On = slow pitch snap back to middle. Off = fast snap
+Button 2 (yellow): pitch bend response. On = responds to Y axis, Off = no Y-axis response.
+Button 3 (cyan/green): X-axis response. Off = no CC on X-axis. Cyan = keeps value on release. Green = snap to zero on release.
+Button 4 (magenta): pressure response. On = responds to pressure. Off = no response to presure.
+
+*/
+
+/*
+<metadata description="XYZ Pad Controller for Lightpad Block" details="XYZ Pad Controller for Lightpad Block. Y-axis is pitch bend, X and Z (pressure) are customizable CCs. All axes are togglable." target="Lightpad" tags="Controller;MIDI"  canEmbedModes="false">
+    
+    <groups>
+        <group name="xyzpad" displayName="CC Values" />
+        <group name="colours" displayName="Colors" />
+    </groups>
+
+    <variables>
+        <variable name="channel" displayName="MIDI Channel" type="int" min="1" max="16" value="1" displayMode="stepper" tooltip="The MIDI channel that values are sent on" />
+        <variable name="xCC" displayName="X axis CC" group="xyzpad" type="int" min="0" max="127" value="1" displayMode="stepper" tooltip="The MIDI CC that is sent for X position changes"/>
+        <variable name="zCC" displayName="Z axis CC" group="xyzpad" type="int" min="0" max="127" value="115" displayMode="stepper" tooltip="The MIDI CC that is sent for pressure changes" />
+        <variable name="xyzColour" group="colours" displayName="XYZ Touch colour" type="colour" value="0x00FFFF" tooltip="Color of the the XYZ touch heat map"/>
+        <variable name="xyzBackColour" group="colours" displayName="XYZ Background" type="colour" value="0x000033" tooltip="The color of the XYZ pad background"/>
+        <variable name="borderColor" group="colours" displayName="Borders" type="colour" value="0x1133FF" tooltip="The color of the borders"/>
+        <variable name="crosshairColor" group="colours" displayName="Crosshair" type="colour" value="0x555500" tooltip="The color of the crosshair"/>
+        </variables>
+
+</metadata>
+*/
+
+// pitch bend constants for easy reference later in code
+const int pbMid = 8192;
+const int pbMax = 16383;
+const int pbMin = 0;
+const int pbDeltaSlow = pbMax / 10;
+const int pbDeltaFast = pbMax / 2;
+
+// button-related variables
+bool slowPitchSnap, enableY, enableZ;
+int enableX;
+int pbDelta;
+bool pbFade;
+bool wheelFade;
+
+// state values that can vary over time even without user press
+int pitchBendValue;
+int xControlValue;
+
+int time;
+ 
+// API function called on start
+void initialise()
+{
+    pitchBendValue = 8192;
+	
+	slowPitchSnap = true;
+	enableY = true;
+	enableX = 1;
+	enableZ = true;
+	pbDelta = pbDeltaSlow;
+	pbFade = true;
+	
+    
+    for (int i = 0; i < 32; ++i)
+        setLocalConfigActiveState (i, false, false);
+}
+
+// function borrowed from online examples
+int mapTouchToRange (float v, float inMin, float inMax, float outMax)
+{
+    return int (map (v, inMin / 100.0, inMax / 100.0, 0.0, outMax));
+}
+
+// API function called when touch active
+void handleTouch (int index, float x, float y, float z, float vz)
+{
+    int xPixel = mapTouchToRange (x, 7.0, 193.0, 14.0);
+	if (xPixel > 4) {
+		handleTouchXYZ (index, x, y, z, vz);
+	}
+}
+
+void handleTouchXYZ (int index, float x, float y, float z, float vz)
+{
+    addPressurePoint (xyzColour, x, y, z * 20.0); // graphical update
+	
+	// is Y-axis pitch bend enabled? (Response from bottom edge to top edge)
+	if(enableY) {
+		// strategy: get the y position in pixels then scale it to avoid difficulty getting max PB value
+		float yPixel = mapTouchToRange (y, 7.0, 193.0, 14.0);
+		yPixel = yPixel-7; // center around zero
+		yPixel = yPixel * 12/14; // scale to avoid difficulty reaching the edge
+		yPixel = yPixel+6; // move the center back up
+		pitchBendValue = pbMax - int(yPixel/12 * pbMax); // scale to pitch bend range
+		
+		// cap the value
+		if (pitchBendValue > pbMax) {
+			pitchBendValue = pbMax;
+		} else if (pitchBendValue < pbMin) {
+			pitchBendValue = pbMin;
+		}
+		sendPitchBend (channel-1, pitchBendValue); // channel, value
+	}
+	// is X-axis CC enabled? (Response from middle to right edge)
+	if(enableX > 0) {
+		float xPixel = mapTouchToRange (x, 7.0, 193.0,  14.0);
+		if (xPixel > 7.0) {
+			xPixel = xPixel - 7.0;
+		} else {
+			xPixel = 0;
+		}
+		
+		// like PB, we scale to >127 to avoid having difficulty getting max CC value
+		xControlValue = int(xPixel/7 * 150.0); 
+		
+		if(xControlValue>127) {
+			xControlValue = 127;
+		} else if(xControlValue<0) {
+			xControlValue = 0;
+		}
+		sendCC(channel-1, xCC, xControlValue);
+	}
+	// is Z-axis CC enabled? (pressure)
+	if(enableZ) {
+		int zControlValue = mapTouchToRange (z, 0.0, 100.0, 127.0);
+		sendCC ((channel - 1), zCC, zControlValue);
+	}
+}
+
+// API function called at the onset of a touch series
+void touchStart (int index, float x, float y, float z, float vz)
+{
+	pbFade = false;
+	wheelFade = false;
+	handleTouch (index, x, y, z, vz);
+}
+
+// API function called whenever the touch moves
+void touchMove (int index, float x, float y, float z, float vz)
+{
+    handleTouch (index, x, y, z, vz);
+}
+
+// API function called whenever the touch series ends
+void touchEnd (int index, float x, float y, float z, float vz)
+{
+	// turn on wheel fades after a touch ends
+	pbFade = true;
+	wheelFade = true;
+	
+	// where was the touch in pixels?
+	int xPixel = mapTouchToRange (x, 7.0, 193.0, 14.0);
+	int yPixel = mapTouchToRange (y, 7.0, 193.0, 14.0);
+	
+	// was it on the button side?
+	if (xPixel < 5) {
+		if (yPixel<4) { // red button? (pitch bend behavior)
+			slowPitchSnap = !slowPitchSnap;
+			if (slowPitchSnap) {
+				pbDelta = pbDeltaSlow;
+			} else {
+				pbDelta = pbDeltaFast;
+			}
+		} else 
+		if (yPixel>4 && yPixel <7) { // yellow button? (enable pitch bend / Y-axis)
+			enableY = !enableY;
+		} else 
+		if (yPixel>=7 && yPixel <10) { // cyan/green button? (x-axis CCs enable/behavior)
+			enableX = enableX+1;
+			if (enableX >=3) {
+				enableX = 0;
+			}
+		} else 
+		if (yPixel>=10) { // magenta button? (enable z-axis CCs)
+			enableZ = !enableZ;
+		}
+	}  else {
+		handleTouch (index, x, y, z, vz);
+	}
+}
+
+void repaint() // what to do on each update
+{
+    clearDisplay();
+    paintInterface(); // display current state
+	handleFades(); // address pitch/CC fades ouside of a touch
+}
+
+void handleFades() {
+	if (pbFade && pitchBendValue > pbMid) { // do we need to fade pitch bend down?
+		pitchBendValue = pitchBendValue - pbDelta;
+		if (pitchBendValue < pbMid) {
+			pitchBendValue = pbMid;
+		}
+		sendPitchBend (channel-1, pitchBendValue); 
+	} else
+	if (pbFade && pitchBendValue < pbMid) { // do we need to fade pitch bend up?
+		pitchBendValue = pitchBendValue + pbDelta;
+		if (pitchBendValue > pbMid) {
+			pitchBendValue = pbMid;
+		}
+		sendPitchBend (channel-1, pitchBendValue); 
+	} 
+	if (wheelFade && xControlValue > 0 && enableX==2) { // do we need to fade X CC down?
+		xControlValue = xControlValue-40;
+		if (xControlValue < 0) {
+			xControlValue = 0;
+		}
+		sendCC(channel-1, xCC, xControlValue);
+	}
+}
+
+void paintInterface() 
+{
+	// background and border
+	fillRect (borderColor,0,0,15,15);
+    fillRect (xyzBackColour, 1, 1, 13, 13);
+	
+	// touch-related colors
+    drawPressureMap();
+    fadePressureMap(); 
+	
+	// crosshair center
+	fillRect (crosshairColor, 6, 6, 1, 3);
+	fillRect (crosshairColor, 6, 6, 3, 1);
+	fillRect (crosshairColor, 7, 8, 2, 1);
+	fillRect (crosshairColor, 8, 7, 1, 1);
+	
+	// crosshair rays
+	fillRect (crosshairColor, 9, 7, 5, 1);
+	fillRect (crosshairColor, 7, 1, 1, 5);
+	fillRect (crosshairColor, 7, 9, 1, 5); // for mod wheel axis
+	
+	// set default button colors
+	int b0Color = 0xFF0000;
+	int b1Color = 0xFFFF00;
+	int b2Color = 0x00FFFF;
+	int b3Color = 0xFF00FF;
+	
+	// check button colors based on button state
+	if (!slowPitchSnap) {
+		b0Color = 0x000000; 
+	}
+	if (!enableY) {
+		b1Color = 0x000000; 
+	}
+	if (!enableZ) {
+		b3Color = 0x000000; 
+	}
+	if (enableX==0) {
+		b2Color = 0x000000; 
+	} else if (enableX==2) {
+		b2Color = 0x00FF00;
+	}
+	
+	// paint buttons
+	paintOutlineRec(borderColor, b0Color, 0, 1, 4, 4);
+	paintOutlineRec(borderColor, b1Color, 0, 4, 4, 4);
+	paintOutlineRec(borderColor, b2Color, 0, 7, 4, 4);
+	paintOutlineRec(borderColor, b3Color, 0, 10, 4, 4);
+	
+}
+
+// paint a rectangle with a 1-pixel border around it
+void paintOutlineRec(int borderColor, int fillColor, int x, int y, int w, int h) {
+	fillRect(fillColor, x, y, w, h);
+	fillRect(borderColor, x, y, w, 1);
+	fillRect(borderColor, x, y, 1, w);
+	fillRect(borderColor, x+w-1, y, 1, h);
+	fillRect(borderColor, x, y+h-1, w, 1);
+}

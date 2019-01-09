@@ -1,0 +1,179 @@
+/*
+Random Pentatonic Music for the ROLI Lightpad Block
+Donya Quick
+
+1. Press the side button to start generating.
+2. Push lightly and hold to move the generative parameters (they change gradually).
+3. Push harder to lower the generative range (you'll see a color change).
+4. To change the root of the scale, send MIDI note on from another device to the Lightpad.
+*/
+
+/*
+<metadata description="Random Music Machine" details="Random Pentatonic Music" target="Lightpad" tags="Controller;MIDI"  canEmbedModes="false">
+
+    <variables>
+        <variable name="channel" displayName="MIDI Channel" type="int" min="1" max="16" value="1" displayMode="stepper" tooltip="The MIDI channel that values are sent on" />
+    </variables>
+
+</metadata>
+*/
+
+int millis; // last time we generated something 
+int milliThresh; // timer setting that will change based on X position
+float lastTouchX; // last X touch position
+float lastTouchY; // last Y touch position
+float centerX; // last center of the generative setting (may differ from last touch)
+float centerY; // last center of the generative setting (may differ from last touch)
+bool fillMiddle; // whether tof ill the middle of the generative setting indicator
+int lastRandPitch; // last pitch played
+bool play; // are we generating? Default is false
+int root; // scale root - you can change it by sending MIDI note on events to the block
+int range; // lower end of the range, which responds to Z-axis (pressure)
+bool push; // whether the pressure is enough that the range should change
+
+ 
+// API function called on start
+void initialise()
+{
+    milliThresh=250;
+    millis = getMillisecondCounter();
+    for (int i = 0; i < 32; ++i)
+        setLocalConfigActiveState (i, false, false);
+    lastTouchX = 1;
+    lastTouchY = 1;
+    lastRandPitch = -1; // negative means no pitch
+}
+
+// What to do when the user pushes on the device
+void handleTouch(int index, float x, float y, float z) {
+    if (index==1) {
+        centerX = x;
+        centerY = y;
+        if (abs(x-lastTouchX)<0.02)
+            lastTouchX = x;
+        else if (x > lastTouchX)
+            lastTouchX += 0.02;
+        else if (x < lastTouchX)
+            lastTouchX -= 0.02;
+        
+    
+        if (abs(y-lastTouchY)<0.02)
+            lastTouchY = y;
+        else if (y > lastTouchY)
+            lastTouchY += 0.02;
+        else if (y < lastTouchY)
+            lastTouchY -= 0.02;
+            
+        
+        if (z>=0.5) {
+            range = -int(70*(z-0.5));
+            push = true;
+        } else {
+            push = false; 
+        }
+    }
+}
+
+// API function called at the onset of a touch series
+void touchStart (int index, float x, float y, float z, float vz)
+{
+    if (index==1) {
+        handleTouch(index,x,y,z);
+        fillMiddle = true;
+    }
+}
+
+// API function called whenever the touch moves
+void touchMove (int index, float x, float y, float z, float vz)
+{
+    if (index==1) {
+        handleTouch(index,x,y,z);
+    }
+}
+
+// API function called whenever the touch series ends
+void touchEnd (int index, float x, float y, float z, float vz)
+{
+    if (index==1) {
+        fillMiddle = false;
+	    handleTouch(index,x,y,z);
+    }
+}
+
+// API function called on each update
+void repaint() 
+{
+    blendRect(0x20000000, 0, 0, 15, 15);
+    milliThresh = 500-int(500*lastTouchX/2);
+    if (millis<10) {
+      millis = 10;  
+    }
+    if(play) {
+        paintSpeckles();
+        drawTouch();
+    }
+}
+
+// what to draw each frame
+void drawTouch() {
+    if (lastTouchX >= 0 && lastTouchY >=0) {
+        int x = int(lastTouchX*7);
+        int y = int(lastTouchY*7);
+        int x2 = int(centerX*7);
+        int y2 = int(centerY*7);
+        int edgeColor = 0x00FFFF;
+        if (push)
+            edgeColor = 0x0000FF;
+        blendRect(0x40000000, x,y,2,2);
+        fillRect(edgeColor,x-1,y-1,4,1);
+        fillRect(edgeColor,x-1,y,1,3);
+        fillRect(edgeColor,x-1,y+2,4,1);
+        fillRect(edgeColor,x+2,y,1,2);
+        if (fillMiddle)
+            fillRect(0xFFFF00, x2,y2,2,2);
+    } 
+}
+
+// given a random number, fit it to major pentatonic with a particular root
+int fitMajorPenta(int root, int inValue) {
+    int v = inValue%12;
+    int retVal = inValue;
+    if (v==(root+1)%12 || v==(root+3)%12 || v==(root+6)%12 || v==(root+8)%12 || v==(root+10)%12)
+        retVal = retVal+1;
+    v = retVal%12;
+    if (v==(root+5)%12)
+        retVal+=2;
+    if (v==(root+11)%12)
+        retVal+=1;
+    return retVal;
+}
+
+// API function called when the side button is pushed
+void handleButtonDown (int index) {
+    play = !play;
+    if (!play && lastRandPitch>=0) // if we stop playing and played a pitch...
+        sendNoteOff(channel,lastRandPitch,0); // we better turn it off!
+}
+
+// API function called when the block receives a MIDI message from an external device
+void handleMIDI(int b0, int b1, int b2) {
+    int type = b0 & 0xF0;
+    int chan = b0 & 0x0F;
+    if (type==144) // note on check
+        root = b1%12;
+}
+
+// Make it pretty when a note is generated by lighting up a pixel
+void paintSpeckles() {
+    int t = getMillisecondCounter(); // what time is it now?
+    if (t - millis >= milliThresh) { // have we waited long enough to generate a new note?
+        millis = t; // record the current time
+        int color = getRandomInt(0xFFFFFF); // pick a random color
+        fillPixel(color, getRandomInt(15), getRandomInt(15)); // light it up!
+        if (lastRandPitch>=0) // did we play a pitch previously?
+            sendNoteOff(channel,lastRandPitch,0); // if yes, then we need to turn it off
+        lastRandPitch = fitMajorPenta(root, getRandomInt(30)+70+range); // calculate a new pitch
+        int vol = 27+100-int(100*lastTouchY/2); // volume is based on Y axis
+        sendNoteOn(channel,lastRandPitch,vol); // play the note
+    }
+}
