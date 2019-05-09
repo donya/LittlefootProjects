@@ -1,0 +1,408 @@
+/*
+Simple grid-style piano keyboard. No pitch bend.
+Donya Quick
+
+Screen 1: piano keyboard. white = white key, blue = black key. 
+Screen 2: octave & pitch offset control
+*/
+
+/*
+<metadata description="Random Music Machine" details="Random Pentatonic Music" target="Lightpad" tags="Controller;MIDI"  canEmbedModes="false">
+
+    <variables>
+        <variable name="channel" displayName="MIDI Channel" type="int" min="1" max="16" value="1" displayMode="stepper" tooltip="The MIDI channel that values are sent on" />
+        <variable name="velocityBoost" displayName="Minimum Velocity" type="int" min="0" max="127" value="70" displayMode="stepper" tooltip="Minimum velocity (for when constant velocity option is unchecked)" />
+        <variable name="constVel" displayName = "Constant Velocity" type="bool" value="false" displayMode="checkbox" tooltip="Set constant velocity mode" />
+        <variable name="constVelVal" displayName="Constant Velocity value" type="int" min="0" max="127" value="120" displayMode="stepper" tooltip="Constant velocity value" />
+    </variables>
+
+</metadata>
+*/
+
+
+int screen; // current screen
+int oct; // current octave
+int root; // current root offset
+
+// we will allow up to 10 simultaneous touches (one per finger)
+int p1; // pitch for touch 1
+int p2; // pitch for touch 2
+int p3; // etc.
+int p4;
+int p5;
+int p6;
+int p7;
+int p8;
+int p9;
+int p10;
+
+
+ 
+// API function called on start
+void initialise()
+{
+    oct = 5; // this will mean lowest C is pitch number 60, middle C
+        
+    // ensure that no touch points have pitches assigned
+    p1 = -1;
+    p2 = -1;
+    p3 = -1;
+    p4 = -1;
+    p5 = -1;
+    p6 = -1;
+    p7 = -1;
+    p8 = -1;
+    p9 = -1;
+    p10 = -1;
+    
+    for (int i = 0; i < 32; ++i)
+        setLocalConfigActiveState (i, false, false);
+}
+
+// record the current touch index's pitch
+void recordKeyPress(int index, int p) {
+    int pitch = min(127,max(0,p));
+    if (index==1)
+        p1 = pitch;
+    else if (index==2)
+        p2 = pitch;
+    if (index==3)
+        p3 = pitch;
+    else if (index==4)
+        p4 = pitch;
+    else if (index==5)
+        p5 = pitch;
+    else if (index==6)
+        p6 = pitch;
+    else if (index==7)
+        p7 = pitch;
+    else if (index==8)
+        p8 = pitch;
+    else if (index==9)
+        p9 = pitch;
+    else if (index==10)
+        p10 = pitch;
+}
+
+// record a release of the current touch index
+void recordKeyRelease(int index) {
+    if (index==1)
+        p1 = -1;
+    else if (index==2)
+        p2 = -1;
+    if (index==3)
+        p3 = -1;
+    else if (index==4)
+        p4 = -1;
+    else if (index==5)
+        p5 = -1;
+    else if (index==6)
+        p6 = -1;
+    else if (index==7)
+        p7 = -1;
+    else if (index==8)
+        p8 = -1;
+    else if (index==9)
+        p9 = -1;
+    else if (index==10)
+        p10 = -1;
+}
+
+// For any keys being pressed, make them brighter.
+// All touch indices must be checked to do this.
+void colorKeysOn() {
+    colorPitchKeyOn(p1);
+    colorPitchKeyOn(p2);
+    colorPitchKeyOn(p3);
+    colorPitchKeyOn(p4);
+    colorPitchKeyOn(p5);
+    colorPitchKeyOn(p6);
+    colorPitchKeyOn(p7);
+    colorPitchKeyOn(p8);
+    colorPitchKeyOn(p9);
+    colorPitchKeyOn(p10);
+}
+
+
+void colorPitchKeyOn(int pitch) {
+    int whiteKeyColor = 0xFFFFFF;
+    int blackKeyColor = 0x00FFFF;
+    
+    int p = pitch - root - oct*12; // will give us 0 to 15
+    if (p>=0 && p<4){
+        p = p%4; // we know the row, so find the column
+        if (p==0) {
+            fillRect(whiteKeyColor, 0, 12, 3, 3);
+        } else if (p==1) {
+            fillRect(blackKeyColor, 4, 12, 3, 3);
+        } else if (p==2) {
+            fillRect(whiteKeyColor, 8, 12, 3, 3);
+        } else {
+            fillRect(blackKeyColor, 12, 12, 3, 3);
+        }
+    } else if (p>=0 && p<8){
+        p = p%4; // we know the row, so find the column
+        if (p==0) {
+            fillRect(blackKeyColor, 0, 8, 3, 3);
+        } else if (p==1) {
+            fillRect(whiteKeyColor, 4, 8, 3, 3);
+        } else if (p==2) {
+            fillRect(blackKeyColor, 8, 8, 3, 3);
+        } else {
+            fillRect(whiteKeyColor, 12, 8, 3, 3);
+        }
+    } else if (p>=0 && p<12){
+        p = p%4; // we know the row, so find the column
+        if (p==0) {
+            fillRect(whiteKeyColor, 0, 4, 3, 3);
+        } else if (p==1) {
+            fillRect(whiteKeyColor, 4, 4, 3, 3);
+        } else if (p==2) {
+            fillRect(blackKeyColor, 8, 4, 3, 3);
+        } else {
+            fillRect(whiteKeyColor, 12, 4, 3, 3);
+        }
+    } else if (p>=0 && p<16) {
+        p = p%4; // we know the row, so find the column
+        if (p==0) {
+            fillRect(whiteKeyColor, 0, 0, 3, 3);
+        } else if (p==1) {
+            fillRect(blackKeyColor, 4, 0, 3, 3);
+        } else if (p==2) {
+            fillRect(whiteKeyColor, 8, 0, 3, 3);
+        } else {
+            fillRect(blackKeyColor, 12, 0, 3, 3);
+        }
+    }
+}
+
+// resets root and octave
+void reset() { 
+    fillRect(0xFFFFFF, 0,0,15,15);
+    fillRect(0x00FF00, 6,0,3,3);
+    root = 0;
+    oct = 5;
+}
+
+// get the pitch corresponding to a particular touch index
+int getPitch(int index) {
+    if (index==1)
+        return p1;
+    else if (index==2)
+        return p2;
+    else if (index==3)
+        return p3;
+    else if (index==4)
+        return p4;
+    else if (index==5)
+        return p5;
+    else if (index==6)
+        return p6;
+    else if (index==7)
+        return p7;
+    else if (index==8)
+        return p8;
+    else if (index==9)
+        return p9;
+    else if (index==10)
+        return p10;
+    else
+        return -1;
+}
+
+
+// Handle a touch on the piano screen
+void handleGridTouchPiano(int index, float xRaw, float yRaw) {
+    int x = int(14*xRaw/2);
+    int y = int(14*yRaw/2);
+    bool keyPressed = true;
+    if (y<4) { // top row: G#, A, A#, B / 8, 9, 10, 11 
+        if (x<4) {
+            recordKeyPress(index,oct*12+root+12);
+            
+        } else if (x<8)
+            recordKeyPress(index,oct*12+root+13);
+        else if (x<12)
+            recordKeyPress(index,oct*12+root+14);
+        else
+            recordKeyPress(index,oct*12+root+15);
+    } else if (y<8) { // 2nd row: E, F, F#, G / 4, 5, 6, 7
+        if (x<4) {
+            recordKeyPress(index,oct*12+root+8);
+            
+        } else if (x<8)
+            recordKeyPress(index,oct*12+root+9);
+        else if (x<12)
+            recordKeyPress(index,oct*12+root+10);
+        else
+            recordKeyPress(index,oct*12+root+11);
+    } else if (y<12) { // 3rd row: C, C#, D, D# / 0, 1, 2, 3
+        if (x<4)
+            recordKeyPress(index,oct*12+root+4);
+        else if (x<8)
+            recordKeyPress(index,oct*12+root+5);
+        else if (x<12)
+            recordKeyPress(index,oct*12+root+6);
+        else
+            recordKeyPress(index,oct*12+root+7);
+    } else { // bottom row: octave controls
+        if (x<4)
+            recordKeyPress(index,oct*12+root);
+        else if (x<8)
+            recordKeyPress(index,oct*12+root+1);
+        else if (x<12)
+            recordKeyPress(index,oct*12+root+2);
+        else
+            recordKeyPress(index,oct*12+root+3);
+    }
+}
+
+
+void handleGridTouchControls(float xRaw, float yRaw) {
+    int x = int(14*xRaw/2);
+    int y = int(14*yRaw/2);
+    if (y<4) { // top row
+        if (x>5 && x<9) { // reset button
+            reset();
+        }
+    } else if (y<8) { // root controls row
+        if (x<4) // root down
+            root = max(0, root-1);
+        else if (x>10) // root up
+            root = min(11, root+1);
+    } else if (y<12) { // octave controls
+        if (x<4) // octave down
+            oct = max(0, oct-1);
+        else if (x>10) // ocatve up
+            oct = min(10, oct+1);
+    }
+    
+}
+
+// convert a touch velocity to MIDI 0-127 including the boost setting
+int toVelocity(float vz) {
+    if (constVel)
+        return constVelVal
+    else
+        return min(127,int(vz*127+velocityBoost));
+}
+
+
+// API function called at the onset of a touch series
+void touchStart (int index, float x, float y, float z, float vz)
+{
+    if (screen==0) {
+        handleGridTouchPiano(index,x,y); 
+        int p = getPitch(index);
+        if (p>=0)
+            sendNoteOn(channel-1, p , toVelocity(vz));
+    } else {
+        handleGridTouchControls(x,y);
+    }
+}
+
+// API function called whenever the touch moves
+void touchMove (int index, float x, float y, float z, float vz)
+{
+    addPressurePoint (0x005555, x, y, z * 10.0); 
+}
+
+// API function called whenever the touch series ends
+void touchEnd (int index, float x, float y, float z, float vz)
+{
+    if(screen==0) {
+        int p = getPitch(index);
+        recordKeyRelease(index);
+        if (p>=0)
+            sendNoteOff(channel-1, p, toVelocity(vz));
+    }
+    
+}
+
+// API function called on each update
+void repaint() 
+{
+    if (screen==0) {
+        paintScreen0();  
+        colorKeysOn();
+    } else {
+        paintScreen1();
+    }
+}
+
+void paintScreen0() {
+    blendRect(0x20000000, 0, 0, 15, 15);
+    int whiteKeyColor = 0x555555;
+    int blackKeyColor = 0x0000FF;
+    
+    drawPressureMap();
+    fadePressureMap(); 
+    
+    fillRect(whiteKeyColor, 0, 0, 3, 3);
+    fillRect(blackKeyColor, 0, 4, 3, 3);
+    fillRect(whiteKeyColor, 0, 8, 3, 3);
+    fillRect(whiteKeyColor, 0, 12, 3, 3);
+    fillRect(blackKeyColor, 4, 0, 3, 3);
+    fillRect(whiteKeyColor, 4, 4, 3, 3);
+    fillRect(whiteKeyColor, 4, 8, 3, 3);
+    fillRect(blackKeyColor, 4, 12, 3, 3);
+    fillRect(whiteKeyColor, 8, 0, 3, 3);
+    fillRect(blackKeyColor, 8, 4, 3, 3);
+    fillRect(blackKeyColor, 8, 8, 3, 3);
+    fillRect(whiteKeyColor, 8, 12, 3, 3);
+    fillRect(blackKeyColor, 12, 0, 3, 3);
+    fillRect(whiteKeyColor, 12, 4, 3, 3);
+    fillRect(whiteKeyColor, 12, 8, 3, 3);
+    fillRect(blackKeyColor, 12, 12, 3, 3);
+}
+
+
+void paintScreen1() {
+    blendRect(0x20000000, 0, 0, 15, 15);
+    int whiteKeyColor = 0x555555;
+    int blackKeyColor = 0x5555FF;
+    
+    drawPressureMap();
+    fadePressureMap(); 
+    
+    fillRect(0x00FF00,6,0,3,3); // reset button
+    
+    // octave buttons
+    fillRect(0xFF0000, 1, 8, 2, 3); // octave down
+    fillRect(0xFF0000, 0, 9, 1, 1);
+    fillRect(0x0000FF, 12, 8, 2, 3); // octave up
+    fillRect(0x0000FF, 14, 9, 1, 1);
+    
+    // root buttons
+    fillRect(0xFF5500, 1, 4, 2, 3); // root down
+    fillRect(0xFF5500, 0, 5, 1, 1); 
+    fillRect(0x0055FF, 12, 4, 2, 3); // root up
+    fillRect(0x0055FF, 14, 5, 1, 1);
+    
+    // octave & root markers
+    fillRect(0xFFFF00, oct+2, 11, 1, 1); // octave marker
+    fillRect(0x00FFFF, root, 3, 1, 1); // root marker
+}
+
+
+
+void emptyRect(int edgeColor, int x, int y, int w, int h) {
+    fillRect(edgeColor,x-1,y-1,w+1,1);
+    fillRect(edgeColor,x-1,y-1,1,h+1);
+    fillRect(edgeColor,x-1,y+h-1,w+1,1);
+    fillRect(edgeColor,x+w-1,y-1,1,h+1);
+}
+
+void emptyRectBlend(int edgeColor, int x, int y, int w, int h) {
+    blendRect(edgeColor,x-1,y-1,w+1,1);
+    blendRect(edgeColor,x-1,y-1,1,h+1);
+    blendRect(edgeColor,x-1,y+h-1,w+1,1);
+    blendRect(edgeColor,x+w-1,y-1,1,h+1);
+}
+
+
+
+// API function called when the side button is pushed
+void handleButtonDown (int index) {
+    screen = (screen+1)%2;
+}
