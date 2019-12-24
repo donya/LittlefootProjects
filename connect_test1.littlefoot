@@ -1,0 +1,155 @@
+
+/*
+Exploration of 2-block interactions
+
+This is a script purely for exploring how the Littlefoot functionality for multiple blocks 
+works. I developed this with two Lightpad Blocks (M version). No MIDI is sent - it just changes
+the lights indicating how different things work. 
+*/
+
+
+/*
+<metadata description="Experimenting with multi-block interfaces" target="Lightpad" tags="Controller;MIDI"  canEmbedModes="false">
+
+</metadata>
+*/
+
+// global variables go here
+bool echoTouch; 
+ 
+// API function called on start
+void initialise()
+{
+    echoTouch = true; // turn this on/off with the control button
+    setAutoRotate(false); // if this is false, then the coordinate system doesn't rotate when the block does
+    for (int i = 0; i < 32; ++i)
+        setLocalConfigActiveState (i, false, false);
+}
+
+
+// API function called at the onset of a touch series
+void touchStart (int index, float x, float y, float z, float vz)
+{
+
+}
+
+// API function called whenever the touch moves
+void touchMove (int index, float x, float y, float z, float vz)
+{
+    if (index==1) {
+        addPressurePoint (0x005555, x, y, z * 10.0); 
+    } else if (index==2) {
+        addPressurePoint (0x555500, x, y, z * 10.0); 
+    } else {
+        addPressurePoint (0x550055, x, y, z * 10.0); 
+    }
+    
+    if (echoTouch) {
+        int xi = int(14*x/2);
+        int yi = int(14*y/2);
+        // mirror the master touch on the other blocks, but in a different color
+        int topID = getBlockIDOnPort(1);
+        int rightID = getBlockIDOnPort(2);
+        int leftID = getBlockIDOnPort(7);
+        int bottomID = getBlockIDOnPort(4);
+        if (topID > 0) {
+            sendMessageToBlock(topID, 0xFFFF00, xi, yi);
+        }
+        if (rightID > 0) {
+            sendMessageToBlock(rightID, 0xFF00FF, xi, yi); 
+        }
+        if (bottomID > 0) {   
+            sendMessageToBlock(bottomID, 0x0000FF, xi, yi); 
+        }
+        if (leftID > 0) {
+            sendMessageToBlock(leftID, 0xFF5000, xi, yi); 
+        }
+    }
+}
+
+void handleMessage(int p1, int p2, int p3) { // Receive a message from another block
+    fillRect(p1, p2, p3, 3, 3);
+    // Note: you can't tell which block it came from unless you use one of the arguments for that.
+}
+
+// API function called whenever the touch series ends
+void touchEnd (int index, float x, float y, float z, float vz)
+{
+    
+}
+
+// API function called on each update
+void repaint() 
+{
+    blendRect(0x20000000, 0, 0, 15, 15);
+    
+    fillRect(0xAAAAAA,6,4,3,1); // mark which side is "up"
+    fillRect(0xAAAAAA,7,3,1,1); // mark which side is "up"
+    if (isMasterBlock()) {
+        fillRect(0xAAAAAA,5,5,5,5);
+    } else {
+        int xDist = getHorizontalDistFromMaster();
+        int yDist = getVerticalDistFromMaster();
+        
+        if (getNumBlocksInTopology () > 1) {
+            // right side can be (2,0) or (2,-1) -- this is connected to master port number 2 
+            if (xDist == 2 && (yDist == 0 || yDist == -1)){
+                fillRect(0x0000AA,5,5,5,5); // blue
+            } else 
+            // bottom can be (0,-2) or (0,0) -- this is connected to master port number 4 (what happened to port 3?)
+            if (xDist == 0 && (yDist == -2 || yDist== 0)){
+                fillRect(0x00AA00,5,5,5,5); // green
+            } else 
+            // left can be (-2,0) or (-2,1) -- this is connected to master port number 7 (??????)
+            if (xDist == -2 && (yDist == 0 || yDist== 1)){
+                fillRect(0xAA0000,5,5,5,5);
+            // top - not sure of exact coords  -- this is connected to master port number 1
+            } else {
+                fillRect(0xAA00AA,5,5,5,5);
+            }
+        } else {
+            fillRect(0x00AAAA,5,5,5,5);
+            fillRect(0x000000,6,6,3,3);
+        }
+    }
+    
+    // Note that port numbers are FIXED. They do not rotate with the regular coordinate system!
+    // If auto-rotate is disabled, the USB port is on the TOP, which is how the master is by default.
+    // If auto-rotate is enabled, you need to use getAngleFromMaster() to determine where the new top is.
+    // The code below assumes auto-rotate is DISABLED. 
+    if (getBlockIDOnPort(1) > 0) { // check if something is connected to top (port 1)
+        fillRect(0xAAAA00, 0,0,15,1); // bar on top of block
+    } 
+    if (getBlockIDOnPort(2) > 0) { // check if something is connected to right (port 2)
+        fillRect(0xAAAA00, 14,0,1,15); // bar on right of block
+    } 
+    if (getBlockIDOnPort(7) > 0) { // check if something is connected to left (port 7)
+        fillRect(0xAAAA00, 0,0,1,15); // bar on left of block
+    } 
+    if (getBlockIDOnPort(4) > 0) { // check if something is connected to bottom (port 4)
+        fillRect(0xAAAA00, 0,14,15,1); // bar on bottom of block
+    } 
+    
+    // An alternative where all blocks are directly connected to the master would be to use getPortToMaster().
+    // 16 is to host (I think)
+    // 0 means master is on top of the current block. Why 0 and not 1??? I have no idea.
+    // 2 means master is on right of the current block. Same as for getBlockIDOnPort.
+    // 6 means master is on the left of the current block. Why 6 and not 7??? I have no idea.
+    // 4 means master is on the bottom of the current block. Same as for getBlockIDOnPort.
+    //log(getPortToMaster());
+    
+    // paint a dot at (0,0) to indicate where the origin is.
+    fillRect(0xFF0000,0,0,1,1);
+    
+    drawPressureMap();
+    
+    // Cluster position lets the block considered to be the origin CHANGE if connecting/disconnecting blocks in real time. 
+    // Whichever block is leftmost / bottommost is at (0,0), regardless of whether it is master.
+    //log(getClusterXpos()); 
+    //log(getClusterYpos()); 
+}
+
+// API function called when the side button is pushed
+void handleButtonDown (int index) {
+ echoTouch = !echoTouch;
+}
